@@ -1,0 +1,71 @@
+# docker-compose.yml (fresh, no port conflicts)
+
+x-airflow-common:
+  &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: custom-airflow:2.7.1-python3.9
+  env_file:
+    - airflow.env
+  volumes:
+    - ./config:/opt/airflow/config
+    - ./dags:/opt/airflow/dags
+    - ./data:/opt/airflow/data
+    - ./etls:/opt/airflow/etls
+    - ./logs:/opt/airflow/logs
+    - ./pipelines:/opt/airflow/pipelines
+    - ./plugins:/opt/airflow/plugins
+    - ./tests:/opt/airflow/tests
+    - ./utils:/opt/airflow/utils
+    - ./requirements.txt:/opt/airflow/requirements.txt
+  environment:
+    AIRFLOW__WEBSERVER__WEB_SERVER_PORT: 8090
+    AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8090
+
+services:
+  postgres:
+    image: postgres:12
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: airflow_reddit
+      POSTGRES_PORT: 5432
+    ports:
+      - "5433:5432"  # Host 5433 → container 5432
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6380:6379"  # Host 6380 → container 6379
+
+  airflow-init:
+    <<: *airflow-common
+    command: bash -c "pip install -r /opt/airflow/requirements.txt && airflow db init && airflow db upgrade && airflow users create --username ishika --firstname Ishika --lastname Jain --role Admin --email airflow@airflow.com --password ishika9897"
+    restart: "no"
+    depends_on:
+      - postgres
+      - redis
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: bash -c "airflow webserver --port 8090 --pid /tmp/airflow-webserver.pid"
+    ports:
+      - "8090:8090"
+    depends_on:
+      - postgres
+      - redis
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      - postgres
+      - redis
+
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+    depends_on:
+      - postgres
+      - redis
